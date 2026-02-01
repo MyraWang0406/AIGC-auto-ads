@@ -1,4 +1,2 @@
-# Streamlit Community Cloud 部署：最小依赖
-# 入口 app_demo.py 使用模拟数据，无需 OpenRouter API
-streamlit>=1.30.0,<3.0
-pydantic>=2.0.0,<3.0
+streamlit>=1.30,<3
+pydantic>=2,<3
