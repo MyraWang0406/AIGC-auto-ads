@@ -1,0 +1,15 @@
+{
+  "card_id": "sc_ecommerce_001",
+  "version": "1.0",
+  "vertical": "ecommerce",
+  "country": "CN",
+  "os": "all",
+  "objective": "purchase",
+  "segment": "价格敏感型用户",
+  "motivation_bucket": "省钱",
+  "why_you_bucket": "更省钱",
+  "why_you_phrase": "同款全网最低价",
+  "why_now_trigger_bucket": "节点事件",
+  "why_now_phrase": "大促来袭",
+  "root_cause_gap": "用户怕踩雷不敢下单，需要建立正品/品质信任；同时怕错过优惠，需要明确限时与稀缺感"
+}
