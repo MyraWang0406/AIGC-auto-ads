@@ -2,11 +2,11 @@
 
 ## "Error running app" 时请检查
 
-### 1. Main file path 是否正确
+### 1. Main file path（必填）
 
-根据仓库结构二选一：
-- **若根目录有 `app_demo.py`**：Main file path = `app_demo.py`
-- **若根目录有 `creative_eval_demo/` 文件夹**：Main file path = `creative_eval_demo/app_demo.py`
+**本项目：Main file path = `app_demo.py`**
+
+原因：push_to_github.bat 在 creative_eval_demo 内执行 git init，仓库根 = creative_eval_demo 内容，app_demo.py 直接在根目录。
 
 ### 2. 重新部署后查看具体错误
 
