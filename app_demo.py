@@ -12,12 +12,7 @@ from pathlib import Path
 
 import streamlit as st
 
-# set_page_config 必须是最早的 st 调用
-st.set_page_config(
-    page_title="投放实验决策系统",
-    layout="wide",
-    initial_sidebar_state="expanded",
-)
+# set_page_config 由 streamlit_app.py（入口壳）负责，此处不再调用
 
 # 其余导入（部署失败时可在此暴露错误）
 try:
