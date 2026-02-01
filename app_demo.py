@@ -11,32 +11,36 @@ from pathlib import Path
 
 import streamlit as st
 
-from element_scores import ElementScore, compute_element_scores
-from eval_schemas import StrategyCard, Variant
-from eval_set_generator import CardEvalRecord, generate_eval_set
-from explore_gate import evaluate_explore_gate
-from ofaat_generator import generate_ofaat_variants
-from scoring_eval import compute_card_score, compute_variant_score
-from simulate_metrics import SimulatedMetrics, simulate_metrics
-from vertical_config import (
-    get_corpus,
-    get_why_now_pool,
-    get_why_now_strong_stimulus_penalty,
-    get_why_now_strong_triggers,
-    get_why_you_examples,
-)
-from validate_gate import WindowMetrics, evaluate_validate_gate
-from variant_suggestions import next_variant_suggestions
-
-# ===== 页面配置 =====
+# set_page_config 必须是最早的 st 调用
 st.set_page_config(
     page_title="决策看板",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
-# 集中加载样式
-from ui.styles import get_global_styles
+# 其余导入（部署失败时可在此暴露错误）
+try:
+    from element_scores import ElementScore, compute_element_scores
+    from eval_schemas import StrategyCard, Variant
+    from eval_set_generator import CardEvalRecord, generate_eval_set
+    from explore_gate import evaluate_explore_gate
+    from ofaat_generator import generate_ofaat_variants
+    from scoring_eval import compute_card_score, compute_variant_score
+    from simulate_metrics import SimulatedMetrics, simulate_metrics
+    from vertical_config import (
+        get_corpus,
+        get_why_now_pool,
+        get_why_now_strong_stimulus_penalty,
+        get_why_now_strong_triggers,
+        get_why_you_examples,
+    )
+    from validate_gate import WindowMetrics, evaluate_validate_gate
+    from variant_suggestions import next_variant_suggestions
+    from ui.styles import get_global_styles
+except Exception as e:
+    st.error(f"导入失败: {e}")
+    st.code(traceback.format_exc(), language="text")
+    st.stop()
 
 st.markdown(get_global_styles(), unsafe_allow_html=True)
 
@@ -888,4 +892,8 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as e:
+        st.error(f"运行错误: {e}")
+        st.code(traceback.format_exc(), language="text")

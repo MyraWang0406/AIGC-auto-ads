@@ -1,7 +1,8 @@
 [server]
 port = 3100
 headless = false
-enableCORS = false
+# Cloud 部署时若加载失败，可尝试 enableCORS = false
+enableCORS = true
 
 [browser]
 serverAddress = "localhost"
