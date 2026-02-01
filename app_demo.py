@@ -38,8 +38,6 @@ except Exception as e:
     st.code(traceback.format_exc(), language="text")
     st.stop()
 
-st.markdown(get_global_styles(), unsafe_allow_html=True)
-
 SAMPLES_DIR = Path(__file__).resolve().parent / "samples"
 
 
@@ -154,29 +152,23 @@ def export_queue_csv(queue: list) -> str:
 
 
 def _render_decision_summary_card(summary: dict):
-    """渲染决策结论卡片：红/黄/绿三色，无额外依赖。"""
+    """渲染决策结论卡片：红仅 FAIL，其余蓝/灰，分析型呈现。"""
     status = summary.get("status", "yellow")
     status_text = summary.get("status_text", "🟡 小步复测(20%)")
     reason = summary.get("reason", "")
     risk = summary.get("risk", "")
     next_step = summary.get("next_step", "复测")
     insufficient = summary.get("insufficient", False)
-
-    border_color = {"red": "#dc2626", "yellow": "#ca8a04", "green": "#16a34a"}.get(status, "#ca8a04")
-    bg_color = {"red": "#fef2f2", "yellow": "#fefce8", "green": "#f0fdf4"}.get(status, "#fefce8")
+    # 语义 class：fail=红，pass=蓝，warn=灰
+    status_class = "status-fail" if status == "red" else ("status-pass" if status == "green" else "status-warn")
 
     html = f"""
-    <div class="decision-summary-card" style="
-        border-left: 4px solid {border_color};
-        background: {bg_color};
-        padding: 1rem 1.25rem;
-        border-radius: 8px;
-        margin-bottom: 1rem;
-    ">
-        <div style="font-weight: 600; font-size: 1rem; margin-bottom: 0.5rem;">{status_text}</div>
-        <div style="font-size: 0.88rem; margin-bottom: 0.35rem;"><b>原因：</b>{reason}</div>
-        <div style="font-size: 0.88rem; margin-bottom: 0.35rem;"><b>风险：</b>{risk}</div>
-        <div style="font-size: 0.88rem;"><b>下一步：</b>{next_step}{"（样本不足，建议补足数据后复测）" if insufficient else ""}</div>
+    <div class="decision-summary-hero {status_class}">
+        <div class="summary-label">📌 决策结论 Summary</div>
+        <div class="summary-status">{status_text}</div>
+        <div class="summary-row"><b>原因：</b>{reason}</div>
+        <div class="summary-row"><b>风险：</b>{risk}</div>
+        <div class="summary-row"><b>下一步：</b>{next_step}{"（样本不足，建议补足数据后复测）" if insufficient else ""}</div>
     </div>
     """
     st.markdown(html, unsafe_allow_html=True)
@@ -279,6 +271,7 @@ def load_mock_data(
                 or sample.get("why_now_trigger")
                 or card.why_now_trigger,
                 "segment": sample.get("segment") or card.segment,
+                "who_scenario_need": sample.get("who_scenario_need") or getattr(card, "who_scenario_need", "") or "",
                 "objective": sample.get("objective") or card.objective,
                 "root_cause_gap": sample.get("root_cause_gap")
                 or get_root_cause_gap(vert)
@@ -599,6 +592,9 @@ def _multiselect_safe(label: str, options: list[str], key: str, default_all: boo
 def main():
     _init_session_state()
 
+    # 【关键】每次 rerun 都注入样式，防止点击后颜色版式丢失
+    st.markdown(get_global_styles(), unsafe_allow_html=True)
+
     # 健康检查：URL ?page=health 或 ?health=1 时优先显示（需 Streamlit>=1.30）
     try:
         q = getattr(st, "query_params", None)
@@ -632,8 +628,8 @@ def main():
         unsafe_allow_html=True,
     )
 
-    # Tabs 式导航（按钮，同页切换）
-    tab_cols = st.columns([1, 1, 1, 1, 1, 1, 3])
+    # 顶部 Tabs
+    tab_cols = st.columns([1, 1, 1, 1, 1, 4])
     with tab_cols[0]:
         if st.button("决策看板", key="nav_board", type="primary" if view == "决策看板" else "secondary"):
             st.session_state["view_radio"] = "决策看板"
@@ -647,19 +643,19 @@ def main():
             st.session_state["view_radio"] = "Health"
             st.rerun()
     with tab_cols[3]:
-        if st.button("行业：休闲游戏", key="nav_game", type="primary" if vert_idx == "休闲游戏" else "secondary"):
+        if st.button("休闲游戏", key="nav_game", type="primary" if vert_idx == "休闲游戏" else "secondary"):
             st.session_state["vertical_select"] = "休闲游戏"
             st.session_state["use_generated"] = False
             st.session_state["generated_variants"] = None
             st.rerun()
     with tab_cols[4]:
-        if st.button("行业：电商", key="nav_ec", type="primary" if vert_idx == "电商" else "secondary"):
+        if st.button("电商", key="nav_ec", type="primary" if vert_idx == "电商" else "secondary"):
             st.session_state["vertical_select"] = "电商"
             st.session_state["use_generated"] = False
             st.session_state["generated_variants"] = None
             st.rerun()
     with tab_cols[5]:
-        if st.button("❓ 帮助", key="nav_help"):
+        if st.button("帮助", key="nav_help"):
             st.session_state["show_help"] = not st.session_state["show_help"]
             st.rerun()
 
@@ -669,7 +665,7 @@ def main():
             "切换行业后语料自动切换。"
         )
 
-    # ===== 左侧：电梯导航 + 实验队列 =====
+    # ===== 左侧：电梯导航（锚点链接，不触发 rerun，保持锚定+样式） + 实验队列 =====
     with st.sidebar:
         st.markdown('<div class="elevator-title">📌 电梯导航</div>', unsafe_allow_html=True)
         for label, sid in [
@@ -680,15 +676,10 @@ def main():
             ("4 元素贡献", "sec-4"),
             ("5 变体建议", "sec-5"),
         ]:
-            is_active = st.session_state.get("nav_section") == sid
-            if st.button(
-                label,
-                key=f"nav_{sid}",
-                use_container_width=True,
-                type="primary" if is_active else "secondary",
-            ):
-                st.session_state["nav_section"] = sid
-                st.rerun()
+            st.markdown(
+                f'<a href="#{sid}" class="elevator-link">{label}</a>',
+                unsafe_allow_html=True,
+            )
 
         st.divider()
         _render_experiment_queue_sidebar()
@@ -708,54 +699,13 @@ def main():
     cta_opts = corp.get("cta") or ["立即下载", "现在试试", "立即下单", "立刻试玩"]
     mb_opts = corp.get("motivation_bucket") or ["成就感", "爽感", "其他"]
 
-    # 筛选区：统一高度
     st.session_state.setdefault("filter_mb", mb_opts[0])
     st.session_state.setdefault("filter_n_gen", 12)
+    mb_selected = st.session_state.get("filter_mb") or mb_opts[0]
+    if mb_selected not in mb_opts:
+        mb_selected = mb_opts[0]
 
-    f1, f2, f3, f4, f5, f6, f7 = st.columns([2, 2, 2, 1.2, 0.6, 0.4, 2])
-    with f1:
-        hooks = _multiselect_safe("Hook", hook_opts, f"filter_hook_{vertical_choice}")
-    with f2:
-        sells = _multiselect_safe("卖点", sell_opts, f"filter_sell_{vertical_choice}")
-    with f3:
-        ctas = _multiselect_safe("CTA", cta_opts, f"filter_cta_{vertical_choice}")
-    with f4:
-        if st.session_state.get("filter_mb") not in mb_opts:
-            st.session_state["filter_mb"] = mb_opts[0]
-        mb_selected = st.selectbox("动机桶", mb_opts, key="filter_mb")
-    with f5:
-        n_gen = st.number_input(
-            "N",
-            min_value=1,
-            max_value=24,
-            step=1,
-            key="filter_n_gen",
-            help="生成变体数量",
-        )
-    with f6:
-        if st.session_state["use_generated"] and st.button("恢复示例"):
-            st.session_state["use_generated"] = False
-            st.session_state["generated_variants"] = None
-            st.rerun()
-    with f7:
-        if st.button("生成并评测", type="primary"):
-            if not hooks or not sells or not ctas:
-                st.error("请至少各选 1 项 hook、卖点、CTA")
-            else:
-                card_path = SAMPLES_DIR / f"eval_strategy_card_{vertical_choice}.json"
-                if not card_path.exists():
-                    card_path = SAMPLES_DIR / "eval_strategy_card.json"
-                with open(card_path, "r", encoding="utf-8") as f:
-                    card = StrategyCard.model_validate(json.load(f))
-                asset_pool = corp.get("asset_var") or {}
-                vs = generate_ofaat_variants(
-                    card.card_id, hooks, sells, ctas, n=n_gen, asset_pool=asset_pool
-                )
-                st.session_state["generated_variants"] = vs
-                st.session_state["use_generated"] = True
-                st.success(f"已生成 {len(vs)} 个变体")
-                st.rerun()
-
+    # 先加载数据，用于顶部决策结论（第一屏最突出）
     variants_arg = st.session_state["generated_variants"] if st.session_state["use_generated"] else None
     data = load_mock_data(
         variants=variants_arg,
@@ -767,27 +717,98 @@ def main():
     variants = data["variants"]
     vert = data.get("vertical", getattr(card, "vertical", "casual_game") or "casual_game")
 
-    # ----- 0 决策结论顶栏（30 秒决策）-----
+    # ----- 0 决策结论 Summary：第一屏最突出 -----
     st.markdown('<span id="sec-0"></span>', unsafe_allow_html=True)
     summary = compute_decision_summary(data)
     _render_decision_summary_card(summary)
 
+    st.caption("筛选与生成")
+    who_scenario_opts = corp.get("who_scenario_need") or []
+    # 第一行：Hook、卖点、（电商则加 人/场景/需求）、CTA
+    if vertical_choice == "ecommerce" and who_scenario_opts:
+        r1a, r1b, r1c, r1d = st.columns([1, 1, 1, 1])
+        with r1a:
+            hooks = _multiselect_safe("Hook", hook_opts, f"filter_hook_{vertical_choice}")
+        with r1b:
+            sells = _multiselect_safe("卖点", sell_opts, f"filter_sell_{vertical_choice}")
+        with r1c:
+            who_scenario = _multiselect_safe("人/场景/需求", who_scenario_opts, f"filter_who_{vertical_choice}")
+        with r1d:
+            ctas = _multiselect_safe("CTA", cta_opts, f"filter_cta_{vertical_choice}")
+    else:
+        r1a, r1b, r1c = st.columns(3)
+        with r1a:
+            hooks = _multiselect_safe("Hook", hook_opts, f"filter_hook_{vertical_choice}")
+        with r1b:
+            sells = _multiselect_safe("卖点", sell_opts, f"filter_sell_{vertical_choice}")
+        with r1c:
+            ctas = _multiselect_safe("CTA", cta_opts, f"filter_cta_{vertical_choice}")
+        who_scenario = []
+    # 第二行：动机桶、N、恢复示例、生成并评测
+    r2a, r2b, r2c, r2d = st.columns([1, 0.5, 0.5, 1.5])
+    with r2a:
+        if st.session_state.get("filter_mb") not in mb_opts:
+            st.session_state["filter_mb"] = mb_opts[0]
+        mb_selected = st.selectbox("动机桶", mb_opts, key="filter_mb")
+    with r2b:
+        n_gen = st.number_input(
+            "N",
+            min_value=1,
+            max_value=24,
+            step=1,
+            key="filter_n_gen",
+            help="生成变体数量",
+        )
+    with r2c:
+        if st.session_state["use_generated"] and st.button("恢复示例"):
+            st.session_state["use_generated"] = False
+            st.session_state["generated_variants"] = None
+            st.rerun()
+    with r2d:
+        if st.button("生成并评测", type="primary"):
+            if not hooks or not sells or not ctas:
+                st.error("请至少各选 1 项 hook、卖点、CTA")
+            else:
+                sell_points_for_gen = list(sells)
+                if vertical_choice == "ecommerce" and who_scenario:
+                    suffix = " | " + "、".join(who_scenario)
+                    sell_points_for_gen = [s + suffix for s in sells]
+                card_path = SAMPLES_DIR / f"eval_strategy_card_{vertical_choice}.json"
+                if not card_path.exists():
+                    card_path = SAMPLES_DIR / "eval_strategy_card.json"
+                with open(card_path, "r", encoding="utf-8") as f:
+                    card = StrategyCard.model_validate(json.load(f))
+                asset_pool = corp.get("asset_var") or {}
+                vs = generate_ofaat_variants(
+                    card.card_id, hooks, sell_points_for_gen, ctas, n=n_gen, asset_pool=asset_pool
+                )
+                st.session_state["generated_variants"] = vs
+                st.session_state["use_generated"] = True
+                st.success(f"已生成 {len(vs)} 个变体")
+                st.rerun()
+
+    st.divider()
+
     # ----- 1 结构卡片 -----
     st.markdown('<span id="sec-1"></span>', unsafe_allow_html=True)
     st.subheader("1️⃣ 结构卡片摘要")
-    c1, c2, c3, c4, c5, c6 = st.columns(6)
-    with c1:
+    cols = st.columns(7 if vert == "ecommerce" else 6)
+    with cols[0]:
         st.metric("动机桶", getattr(card, "motivation_bucket", "-") or "成就感")
-    with c2:
+    with cols[1]:
         st.metric("Sell Point-Why you", card.why_you_phrase or card.why_you_label)
-    with c3:
+    with cols[2]:
         st.metric("Sell Point-Why now", card.why_now_phrase or card.why_now_trigger)
-    with c4:
+    with cols[3]:
         st.metric("人群", card.segment[:18] + "…" if len(card.segment) > 18 else card.segment)
-    with c5:
+    with cols[4]:
         st.metric("行业", "休闲游戏" if vert == "casual_game" else "电商")
-    with c6:
+    with cols[5]:
         st.metric("投放目标", card.objective)
+    if vert == "ecommerce":
+        with cols[6]:
+            wsn = getattr(card, "who_scenario_need", "") or ""
+            st.metric("人/场景/需求", wsn[:18] + "…" if len(wsn) > 18 else (wsn or "-"))
     st.caption(f"国家/OS: {card.country or '-'} / {card.os or '-'}")
     if vert == "ecommerce":
         st.caption("电商：early_ROAS 权重大，含退款风险")
@@ -1085,16 +1106,6 @@ def main():
                         mime="application/json",
                         key=f"sug_gen_{i}",
                     )
-
-    # 电梯导航滚动
-    nav_sid = st.session_state.get("nav_section", "")
-    if nav_sid:
-        st.markdown(
-            f'<script>var el=document.getElementById("{nav_sid}");'
-            f'if(el)el.scrollIntoView({{behavior:"smooth"}});</script>',
-            unsafe_allow_html=True,
-        )
-
 
 if __name__ == "__main__":
     try:

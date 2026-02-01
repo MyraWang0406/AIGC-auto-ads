@@ -52,6 +52,7 @@ class StrategyCard(BaseModel):
     os: str = Field(default="", description="iOS / Android / all")
     objective: str = Field(default="", description="install / purchase / lead 等")
     segment: str = Field(default="", description="人群分层")
+    who_scenario_need: str = Field(default="", description="电商：什么人什么场景什么需求")
 
     # 动机
     motivation_bucket: MotivationBucket = Field(..., description="动机桶")
