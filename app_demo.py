@@ -1,10 +1,11 @@
 """
-决策看板 (Decision Board) - 创意评测
+投放实验决策系统 (Decision Support System) - 创意评测
 产品化 UI，无 session_state/widget 冲突，同页 Tab 切换。
 """
 from __future__ import annotations
 
 import json
+import sys
 import traceback
 from collections import defaultdict
 from pathlib import Path
@@ -13,7 +14,7 @@ import streamlit as st
 
 # set_page_config 必须是最早的 st 调用
 st.set_page_config(
-    page_title="决策看板",
+    page_title="投放实验决策系统",
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -46,6 +47,29 @@ st.markdown(get_global_styles(), unsafe_allow_html=True)
 
 SAMPLES_DIR = Path(__file__).resolve().parent / "samples"
 
+
+def _render_health_page():
+    """健康检查页：快速排查 key/网络/导入问题。URL: ?page=health 或 导航点 Health"""
+    st.subheader("🏥 健康检查 (Health Check)")
+    rows = []
+    rows.append(("Python", f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"))
+    rows.append(("Streamlit", st.__version__))
+    import_ok = True
+    for name in ["pydantic", "element_scores", "eval_schemas", "decision_summary"]:
+        try:
+            __import__(name)
+            rows.append((f"import {name}", "✓"))
+        except Exception as e:
+            rows.append((f"import {name}", f"✗ {str(e)[:50]}"))
+            import_ok = False
+    for k, v in rows:
+        st.write(f"**{k}**: {v}")
+    import os as _os
+    api_key_set = bool(_os.environ.get("OPENROUTER_API_KEY", "").strip())
+    st.write("**OPENROUTER_API_KEY**:", "✓ 已设置" if api_key_set else "○ 未设置（app_demo 模拟数据，无需 Key）")
+    st.write("**OPENROUTER_MODEL**:", _os.environ.get("OPENROUTER_MODEL") or "（未设置，默认 gpt-4o-mini）")
+    st.success("健康检查完成" if import_ok else "部分导入失败，请检查 requirements.txt")
+
 # 窗口 ID → 中文可读
 WINDOW_LABELS = {
     "window_1": "首测窗口（同日第1窗口）",
@@ -64,6 +88,142 @@ CROSS_OS_TOOLTIP = "pos=双端一致拉/拖；neg=双端一致；mixed=双端不
 # OFAAT 全称
 OFAAT_FULL = "单因子实验（OFAAT, One-Factor-At-A-Time）"
 OFAAT_TOOLTIP = "One-Factor-At-A-Time：一次只改一个变量，便于归因"
+
+from decision_summary import compute_decision_summary
+
+# 实验包默认参数
+DEFAULT_PLATFORMS = ["iOS", "Android"]
+DEFAULT_SUGGESTED_N = 12
+DEFAULT_SCALE_UP_STEP_PCT = "20%"
+
+
+def build_experiment_package(
+    suggestion,
+    *,
+    platforms: list[str] | None = None,
+    suggested_n: int | None = None,
+    scale_up_step: str | None = None,
+) -> dict:
+    """
+    从 VariantSuggestion 构建下一轮实验包（OFAAT 结构化 JSON）。
+    不改变业务逻辑，仅做数据包装。
+    """
+    alts = getattr(suggestion, "candidate_alternatives", None) or []
+    return {
+        "changed_field": getattr(suggestion, "changed_field", ""),
+        "current_value": getattr(suggestion, "current_value", ""),
+        "candidate_alternatives": [str(x) for x in alts],
+        "platforms": platforms or DEFAULT_PLATFORMS.copy(),
+        "suggested_n": suggested_n if suggested_n is not None else DEFAULT_SUGGESTED_N,
+        "scale_up_step": scale_up_step or DEFAULT_SCALE_UP_STEP_PCT,
+        "delta_desc": getattr(suggestion, "delta_desc", "") or "",
+        "rationale": getattr(suggestion, "rationale", "") or "",
+        "confidence_level": getattr(suggestion, "confidence_level", "medium"),
+        "source": "suggestion",
+    }
+
+
+def _queue_item_to_export_row(item: dict) -> dict:
+    """队列项转导出行（CSV/JSON 兼容）"""
+    alts = item.get("candidate_alternatives", [])
+    return {
+        "changed_field": item.get("changed_field", ""),
+        "current_value": item.get("current_value", ""),
+        "candidate_alternatives": " | ".join(str(x) for x in alts),
+        "platforms": ", ".join(item.get("platforms", [])),
+        "suggested_n": item.get("suggested_n", DEFAULT_SUGGESTED_N),
+        "scale_up_step": item.get("scale_up_step", DEFAULT_SCALE_UP_STEP_PCT),
+        "delta_desc": item.get("delta_desc", ""),
+        "source": item.get("source", "unknown"),
+    }
+
+
+def export_queue_json(queue: list) -> str:
+    """导出实验队列为 JSON 字符串"""
+    out = [dict(item) for item in queue]
+    return json.dumps(out, ensure_ascii=False, indent=2)
+
+
+def export_queue_csv(queue: list) -> str:
+    """导出实验队列为 CSV 字符串"""
+    import io
+    import csv
+    if not queue:
+        return "changed_field,current_value,candidate_alternatives,platforms,suggested_n,scale_up_step,delta_desc,source\n"
+    rows = [_queue_item_to_export_row(item) for item in queue]
+    buf = io.StringIO()
+    w = csv.DictWriter(buf, fieldnames=list(rows[0].keys()))
+    w.writeheader()
+    w.writerows(rows)
+    return buf.getvalue()
+
+
+def _render_decision_summary_card(summary: dict):
+    """渲染决策结论卡片：红/黄/绿三色，无额外依赖。"""
+    status = summary.get("status", "yellow")
+    status_text = summary.get("status_text", "🟡 小步复测(20%)")
+    reason = summary.get("reason", "")
+    risk = summary.get("risk", "")
+    next_step = summary.get("next_step", "复测")
+    insufficient = summary.get("insufficient", False)
+
+    border_color = {"red": "#dc2626", "yellow": "#ca8a04", "green": "#16a34a"}.get(status, "#ca8a04")
+    bg_color = {"red": "#fef2f2", "yellow": "#fefce8", "green": "#f0fdf4"}.get(status, "#fefce8")
+
+    html = f"""
+    <div class="decision-summary-card" style="
+        border-left: 4px solid {border_color};
+        background: {bg_color};
+        padding: 1rem 1.25rem;
+        border-radius: 8px;
+        margin-bottom: 1rem;
+    ">
+        <div style="font-weight: 600; font-size: 1rem; margin-bottom: 0.5rem;">{status_text}</div>
+        <div style="font-size: 0.88rem; margin-bottom: 0.35rem;"><b>原因：</b>{reason}</div>
+        <div style="font-size: 0.88rem; margin-bottom: 0.35rem;"><b>风险：</b>{risk}</div>
+        <div style="font-size: 0.88rem;"><b>下一步：</b>{next_step}{"（样本不足，建议补足数据后复测）" if insufficient else ""}</div>
+    </div>
+    """
+    st.markdown(html, unsafe_allow_html=True)
+    # 下一步按钮（占位，不写库）
+    btn_cols = st.columns([1, 1, 1, 5])
+    with btn_cols[0]:
+        if st.button("🔄 复测", key="next_retest"):
+            st.toast("复测（占位，未写入数据库）")
+    with btn_cols[1]:
+        if st.button("📈 放量", key="next_scale", disabled=(next_step != "放量")):
+            st.toast("放量（占位，未写入数据库）")
+    with btn_cols[2]:
+        if st.button("➕ 加入实验队列", key="next_queue"):
+            st.toast("加入实验队列（占位，未写入数据库）")
+    st.divider()
+
+
+def _render_experiment_queue_sidebar():
+    """侧边栏实验队列：展示已加入实验、导出 JSON/CSV"""
+    q = st.session_state.get("experiment_queue", [])
+    st.markdown("**📋 实验队列**")
+    if not q:
+        st.caption("暂无实验，从「变体建议」或「元素贡献」加入")
+    else:
+        for idx, item in enumerate(q):
+            field = item.get("changed_field", "-")
+            curr = (item.get("current_value", "") or "")[:12]
+            alts = item.get("candidate_alternatives", [])[:2]
+            st.caption(f"{idx + 1}. {field}: {curr} → {', '.join(str(a) for a in alts) or '-'}")
+            if st.button("移除", key=f"queue_rm_{idx}"):
+                q2 = [x for i, x in enumerate(q) if i != idx]
+                st.session_state["experiment_queue"] = q2
+                st.rerun()
+        if st.button("清空队列", key="queue_clear"):
+            st.session_state["experiment_queue"] = []
+            st.rerun()
+        st.divider()
+        st.caption("导出")
+        json_str = export_queue_json(q)
+        csv_str = export_queue_csv(q)
+        st.download_button("⬇ JSON", data=json_str, file_name="experiment_queue.json", mime="application/json", key="dl_json")
+        st.download_button("⬇ CSV", data=csv_str, file_name="experiment_queue.csv", mime="text/csv", key="dl_csv")
 
 
 def _init_session_state():
@@ -444,6 +604,15 @@ def _multiselect_safe(label: str, options: list[str], key: str, default_all: boo
 def main():
     _init_session_state()
 
+    # 健康检查：URL ?page=health 或 ?health=1 时优先显示（需 Streamlit>=1.30）
+    try:
+        q = getattr(st, "query_params", None)
+        if q and (q.get("page") == "health" or q.get("health") == "1"):
+            _render_health_page()
+            return
+    except Exception:
+        pass
+
     # 右下角联系
     st.markdown(
         '<div class="contact-footer">联系作者 <a href="mailto:myrawzm0406@163.com">myrawzm0406@163.com</a></div>',
@@ -456,7 +625,11 @@ def main():
     show_help = st.session_state["show_help"]
 
     # ===== 顶部 Header：固定蓝系 + Tabs 同页切换 =====
-    main_title = "评测集 (Eval Set)" if view == "评测集" else "决策看板 (Decision Board)"
+    main_title = (
+        "评测集 (Eval Set)" if view == "评测集"
+        else "Health Check" if view == "Health"
+        else "投放实验决策系统 (Decision Support System)"
+    )
     st.markdown(
         f'<div id="main-header" class="title-banner">'
         f'<span class="title-text">{main_title}</span>'
@@ -465,7 +638,7 @@ def main():
     )
 
     # Tabs 式导航（按钮，同页切换）
-    tab_cols = st.columns([1, 1, 1, 1, 1, 4])
+    tab_cols = st.columns([1, 1, 1, 1, 1, 1, 3])
     with tab_cols[0]:
         if st.button("决策看板", key="nav_board", type="primary" if view == "决策看板" else "secondary"):
             st.session_state["view_radio"] = "决策看板"
@@ -475,18 +648,22 @@ def main():
             st.session_state["view_radio"] = "评测集"
             st.rerun()
     with tab_cols[2]:
+        if st.button("Health", key="nav_health", type="primary" if view == "Health" else "secondary"):
+            st.session_state["view_radio"] = "Health"
+            st.rerun()
+    with tab_cols[3]:
         if st.button("行业：休闲游戏", key="nav_game", type="primary" if vert_idx == "休闲游戏" else "secondary"):
             st.session_state["vertical_select"] = "休闲游戏"
             st.session_state["use_generated"] = False
             st.session_state["generated_variants"] = None
             st.rerun()
-    with tab_cols[3]:
+    with tab_cols[4]:
         if st.button("行业：电商", key="nav_ec", type="primary" if vert_idx == "电商" else "secondary"):
             st.session_state["vertical_select"] = "电商"
             st.session_state["use_generated"] = False
             st.session_state["generated_variants"] = None
             st.rerun()
-    with tab_cols[4]:
+    with tab_cols[5]:
         if st.button("❓ 帮助", key="nav_help"):
             st.session_state["show_help"] = not st.session_state["show_help"]
             st.rerun()
@@ -497,10 +674,11 @@ def main():
             "切换行业后语料自动切换。"
         )
 
-    # ===== 左侧电梯导航 =====
+    # ===== 左侧：电梯导航 + 实验队列 =====
     with st.sidebar:
         st.markdown('<div class="elevator-title">📌 电梯导航</div>', unsafe_allow_html=True)
         for label, sid in [
+            ("0 决策结论", "sec-0"),
             ("1 结构卡片", "sec-1"),
             ("2 实验对照表", "sec-2"),
             ("3 门禁状态", "sec-3"),
@@ -517,8 +695,15 @@ def main():
                 st.session_state["nav_section"] = sid
                 st.rerun()
 
+        st.divider()
+        _render_experiment_queue_sidebar()
+
     if view == "评测集":
         render_eval_set_view()
+        return
+
+    if view == "Health":
+        _render_health_page()
         return
 
     # ===== 决策看板主内容 =====
@@ -586,6 +771,11 @@ def main():
     metrics = data["metrics"]
     variants = data["variants"]
     vert = data.get("vertical", getattr(card, "vertical", "casual_game") or "casual_game")
+
+    # ----- 0 决策结论顶栏（30 秒决策）-----
+    st.markdown('<span id="sec-0"></span>', unsafe_allow_html=True)
+    summary = compute_decision_summary(data)
+    _render_decision_summary_card(summary)
 
     # ----- 1 结构卡片 -----
     st.markdown('<span id="sec-1"></span>', unsafe_allow_html=True)
@@ -818,8 +1008,19 @@ def main():
                     if st.button("复制 Prompt", key=f"elem_copy_{i}"):
                         st.toast("已复制到剪贴板（占位）")
                     if st.button("加入实验队列", key=f"elem_queue_{i}"):
+                        _ef = {"hook": "hook_type", "why_you": "why_you_bucket", "why_now": "why_now_trigger"}.get(et, et)
                         q = st.session_state.get("experiment_queue", [])
-                        q.append({"element": s.element_value, "type": et})
+                        q.append({
+                            "changed_field": _ef,
+                            "current_value": s.element_value or "",
+                            "candidate_alternatives": [],
+                            "platforms": DEFAULT_PLATFORMS.copy(),
+                            "suggested_n": DEFAULT_SUGGESTED_N,
+                            "scale_up_step": DEFAULT_SCALE_UP_STEP_PCT,
+                            "delta_desc": f"{_ef}: {s.element_value or ''}",
+                            "rationale": "",
+                            "source": "element",
+                        })
                         st.session_state["experiment_queue"] = q
                         st.toast(f"已加入队列，当前 {len(q)} 项")
                         st.rerun()
@@ -868,18 +1069,27 @@ def main():
                     st.write("**改动（只改一变量）**：", delta)
                     st.write("**候选替代**：", ", ".join(str(x) for x in alts))
                     st.write("**依据**：", getattr(s, "rationale", "") or "")
-                if st.button("复制 Prompt", key=f"sug_copy_{i}"):
-                    st.toast("已复制到剪贴板（占位）")
-                if st.button("加入实验队列", key=f"sug_queue_{i}"):
-                    q = st.session_state.get("experiment_queue", [])
-                    q.append({
-                        "changed_field": getattr(s, "changed_field", ""),
-                        "current": s.current_value,
-                        "alts": alts,
-                    })
-                    st.session_state["experiment_queue"] = q
-                    st.toast(f"已加入队列，当前 {len(q)} 项")
-                    st.rerun()
+                b1, b2, b3 = st.columns(3)
+                with b1:
+                    if st.button("复制 Prompt", key=f"sug_copy_{i}"):
+                        st.toast("已复制到剪贴板（占位）")
+                with b2:
+                    if st.button("加入实验队列", key=f"sug_queue_{i}"):
+                        pkg = build_experiment_package(s)
+                        q = st.session_state.get("experiment_queue", [])
+                        q.append(pkg)
+                        st.session_state["experiment_queue"] = q
+                        st.toast(f"已加入队列，当前 {len(q)} 项")
+                        st.rerun()
+                with b3:
+                    pkg = build_experiment_package(s)
+                    st.download_button(
+                        "一键生成下一轮实验",
+                        data=json.dumps(pkg, ensure_ascii=False, indent=2),
+                        file_name=f"experiment_round_{i}_{getattr(s, 'changed_field', 'x')}.json",
+                        mime="application/json",
+                        key=f"sug_gen_{i}",
+                    )
 
     # 电梯导航滚动
     nav_sid = st.session_state.get("nav_section", "")

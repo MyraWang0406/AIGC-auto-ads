@@ -5,42 +5,39 @@
 ## 本地运行
 
 ```bash
-cd creative_eval_demo
 pip install -r requirements.txt
 streamlit run app_demo.py
 ```
 
-默认端口 3100（见 `.streamlit/config.toml`），或指定：
+本地指定端口：`streamlit run app_demo.py --server.port 3100`
 
-```bash
-streamlit run app_demo.py --server.port 8501
-```
+## 云部署：Streamlit Community Cloud（推荐）
 
-## 云部署（Streamlit Community Cloud）
+1. 将仓库推送到 GitHub
+2. 打开 [share.streamlit.io](https://share.streamlit.io)，用 GitHub 登录
+3. **New app** → 仓库 `MyraWang0406/AIGC-auto-ads`，分支 `main`
+4. **Main file path**：`app_demo.py`（必填，根目录下）
+5. 点击 **Deploy**
 
-> **说明**：Streamlit 是 Python 服务端应用，**不能部署到 Cloudflare Pages**（仅支持静态站点）。推荐使用 **Streamlit Community Cloud** 免费部署。
+> **说明**：`app_demo.py` 使用模拟数据，无需配置 Secrets。若部署 `app.py`（LLM 生成），需在 Settings → Secrets 中配置 `OPENROUTER_API_KEY`、`OPENROUTER_MODEL`。
 
-### 步骤
+### 健康检查
 
-1. 将本仓库推送到 GitHub
-2. 打开 [share.streamlit.io](https://share.streamlit.io)
-3. 用 GitHub 登录 → **New app**
-4. 选择仓库 `MyraWang0406/AIGC-auto-ads`
-5. 分支 `main`
-6. **Main file path**: `app_demo.py`
-7. **App URL**：可选自定义子域名
-8. 点击 **Deploy**
+部署后若页面加载慢，可访问：
 
-部署完成后会得到类似 `https://xxx.streamlit.app` 的链接。
+- `https://你的app.streamlit.app/?page=health` 或 `?health=1`
+- 或点击导航栏 **Health** 按钮
+
+用于排查依赖、环境变量等问题。
 
 ## 项目结构
 
 ```
-creative_eval_demo/
-├── app_demo.py          # 主入口（决策看板 Demo）
+├── app_demo.py          # 主入口（Streamlit Community Cloud 部署用）
+├── app.py               # LLM 生成入口（需 OPENROUTER_API_KEY）
 ├── requirements.txt
 ├── samples/             # 示例 JSON
-├── ui/                  # 样式
+├── .streamlit/config.toml
 └── ...
 ```
 

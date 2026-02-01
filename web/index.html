@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>创意评测 - 生成与评审</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; margin: 0; padding: 1rem; background: #f5f7fa; }
+    h1 { color: #1a365d; margin-bottom: 0.5rem; }
+    .subtitle { color: #4a5568; font-size: 0.9rem; margin-bottom: 1.5rem; }
+    .section { background: #fff; border-radius: 8px; padding: 1rem 1.5rem; margin-bottom: 1rem; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+    .section h2 { font-size: 1rem; margin: 0 0 0.75rem; color: #2d3748; }
+    label { display: block; font-weight: 500; margin-bottom: 0.25rem; font-size: 0.9rem; }
+    textarea { width: 100%; min-height: 180px; font-family: ui-monospace, monospace; font-size: 0.85rem; padding: 0.5rem; border: 1px solid #cbd5e0; border-radius: 6px; }
+    input[type="number"] { width: 80px; padding: 0.4rem; border: 1px solid #cbd5e0; border-radius: 6px; }
+    .row { display: flex; gap: 1rem; align-items: flex-end; flex-wrap: wrap; }
+    .row > * { flex: 0 0 auto; }
+    button { background: #3182ce; color: #fff; border: none; padding: 0.5rem 1rem; border-radius: 6px; cursor: pointer; font-size: 0.9rem; }
+    button:hover { background: #2c5282; }
+    button:disabled { background: #a0aec0; cursor: not-allowed; }
+    .btn-secondary { background: #718096; }
+    .btn-secondary:hover { background: #4a5568; }
+    .error { color: #c53030; background: #fed7d7; padding: 0.75rem; border-radius: 6px; margin-bottom: 1rem; }
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+    th, td { padding: 0.5rem 0.75rem; text-align: left; border-bottom: 1px solid #e2e8f0; }
+    th { background: #edf2f7; font-weight: 600; color: #2d3748; }
+    tr:hover { background: #f7fafc; }
+    .verdict-PASS { color: #276749; font-weight: 600; }
+    .verdict-REVISE { color: #b7791f; font-weight: 600; }
+    .verdict-KILL { color: #c53030; font-weight: 600; }
+    .actions { display: flex; gap: 0.5rem; margin-top: 1rem; flex-wrap: wrap; }
+    .hidden { display: none; }
+    .api-config { font-size: 0.8rem; color: #718096; margin-top: 0.5rem; }
+    .api-config input { width: 100%; max-width: 400px; font-size: 0.85rem; padding: 0.3rem; }
+  </style>
+</head>
+<body>
+  <h1>创意评测 - 生成与评审</h1>
+  <p class="subtitle">输入结构卡片 JSON → 生成变体 → 评审 → 门禁决策（PASS/REVISE/KILL）</p>
+
+  <div class="section">
+    <h2>结构卡片</h2>
+    <label>加载示例</label>
+    <div class="row">
+      <button type="button" class="btn-secondary" data-sample="game">游戏 (game_card)</button>
+      <button type="button" class="btn-secondary" data-sample="ecommerce">电商 (ecommerce_card)</button>
+    </div>
+    <label style="margin-top:0.75rem">结构卡片 JSON</label>
+    <textarea id="cardJson" placeholder='{"vertical":"game","product_name":"...", ...}'></textarea>
+    <div class="row" style="margin-top:0.75rem">
+      <div>
+        <label>生成变体数量 (n)</label>
+        <input type="number" id="n" value="5" min="1" max="10" />
+      </div>
+      <button id="btnSubmit" type="button">生成并评审</button>
+    </div>
+    <div class="api-config">
+      <label>API 地址（本地留空，部署时填 Worker URL）</label>
+      <input type="text" id="apiBase" placeholder="http://localhost:8000 或 https://xxx.workers.dev" />
+    </div>
+  </div>
+
+  <div id="errorBox" class="error hidden"></div>
+
+  <div id="resultSection" class="section hidden">
+    <h2>评审结果</h2>
+    <div class="table-wrap">
+      <table id="resultTable">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>变体ID</th>
+            <th>headline</th>
+            <th>decision</th>
+            <th>fuse_level</th>
+            <th>white_traffic_risk</th>
+            <th>clarity</th>
+            <th>hook_strength</th>
+            <th>compliance_safety</th>
+            <th>summary</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <div class="actions">
+      <button type="button" class="btn-secondary" id="btnDownloadCsv">下载 CSV</button>
+      <button type="button" class="btn-secondary" id="btnDownloadMd">下载 Markdown</button>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

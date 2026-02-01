@@ -5,9 +5,13 @@ import json
 from pathlib import Path
 
 import streamlit as st
-from dotenv import load_dotenv
 
-load_dotenv()
+# 本地可用 .env，云端依赖环境变量
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
 
 from exporters import export_csv, export_markdown
 from openrouter_client import JsonParseError, chat_completion_json

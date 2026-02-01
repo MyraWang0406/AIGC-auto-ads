@@ -1,9 +1,9 @@
+# Streamlit Community Cloud 兼容配置
+# 不要写死 port/serverAddress，由平台自动分配
+
 [server]
-port = 3100
-headless = false
-# Cloud 部署时若加载失败，可尝试 enableCORS = false
+headless = true
 enableCORS = true
 
 [browser]
-serverAddress = "localhost"
 gatherUsageStats = false

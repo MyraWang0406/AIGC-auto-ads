@@ -6,9 +6,12 @@ import os
 from typing import Any, Tuple, Union
 
 import httpx
-from dotenv import load_dotenv
-
-load_dotenv()
+# 本地可用 .env，云端依赖环境变量
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
 
 BASE_URL = "https://openrouter.ai/api/v1"
 
@@ -27,9 +30,12 @@ class JsonParseError(Exception):
 
 
 def _get_api_key() -> str:
-    key = os.getenv("OPENROUTER_API_KEY")
+    """优先从环境变量读取，云端必须配置 OPENROUTER_API_KEY"""
+    key = os.getenv("OPENROUTER_API_KEY", "").strip()
     if not key:
-        raise ValueError("请设置环境变量 OPENROUTER_API_KEY")
+        raise ValueError(
+            "请设置环境变量 OPENROUTER_API_KEY（Streamlit Cloud：Settings → Secrets）"
+        )
     return key
 
 

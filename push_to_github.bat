@@ -16,7 +16,7 @@ if not exist ".git" (
 echo 添加文件...
 git add .
 echo 提交...
-git commit -m "AIGC 创意评测决策看板" 2>nul || echo (无新更改)
+git commit -m "更新: Streamlit Cloud 适配 + 健康检查 + 实验队列" 2>nul || echo (无新更改可提交)
 echo.
 echo 推送中... (需输入 GitHub 用户名与 Token)
 git branch -M main
